@@ -7,7 +7,9 @@
 # LONGDOUBLE_SIZE is: 16
 #
 import ctypes, ctypes.util, os
+import platform
 
+WINDOWS = platform.system() == "Windows"
 
 c_int128 = ctypes.c_ubyte*16
 c_uint128 = c_int128
@@ -27,7 +29,7 @@ class FunctionFactoryStub:
 # You can either re-run clan2py with -l /path/to/library.so
 # Or manually fix this by comment the ctypes.CDLL loading
 _libraries = {}
-_libraries['libc'] = ctypes.CDLL(ctypes.util.find_library('c')) #  ctypes.CDLL('libc')
+_libraries['libc'] = ctypes.CDLL(ctypes.util.find_library('msvcrt' if WINDOWS else 'c')) #  ctypes.CDLL('libc')
 def string_cast(char_pointer, encoding='utf-8', errors='strict'):
     value = ctypes.cast(char_pointer, ctypes.c_char_p).value
     if value is not None and encoding is not None:

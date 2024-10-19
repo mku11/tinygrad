@@ -2,7 +2,7 @@ from __future__ import annotations
 from typing import Final, Optional, ClassVar, Set, Tuple, Dict, Union, Callable
 import math, struct, ctypes, functools
 from dataclasses import dataclass
-from tinygrad.helpers import getenv
+from tinygrad.helpers import getenv, WIN
 
 ConstType = Union[float, int, bool]
 
@@ -92,7 +92,7 @@ class dtypes:
   int32: Final[DType] = DType(5, 4, "int", 'i', 1)
   uint32: Final[DType] = DType(6, 4, "unsigned int", 'I', 1)
   int64: Final[DType] = DType(7, 8, "long", 'l', 1)
-  uint64: Final[DType] = DType(8, 8, "unsigned long", 'L', 1)
+  uint64: Final[DType] = DType(8, 8, "unsigned long", 'Q' if WIN else 'L', 1)
   float16: Final[DType] = DType(9, 2, "half", 'e', 1)
   # bfloat16 has higher priority than float16, so least_upper_dtype(dtypes.int64, dtypes.uint64) = dtypes.float16
   bfloat16: Final[DType] = DType(10, 2, "__bf16", None, 1)

@@ -1,7 +1,8 @@
 from __future__ import annotations
-import os, sys, mmap, _posixshmem, io, ctypes, ctypes.util, platform, contextlib
+import os, sys, mmap, io, ctypes, ctypes.util, platform, contextlib
 from typing import Optional, Generator, Tuple, Callable, List
-from tinygrad.helpers import OSX, round_up
+from tinygrad.helpers import OSX, WIN, round_up
+if not WIN: import _posixshmem
 from tinygrad.device import Compiled, Allocator
 from tinygrad.runtime.autogen import io_uring, libc
 
@@ -87,7 +88,7 @@ class DiskDevice(Compiled):
       self.mem = mmap.mmap(fd, self.size, mmap.MAP_SHARED | MAP_POPULATE | MAP_LOCKED)
       os.close(fd)
     else:
-      try: self.fd = os.open(filename, os.O_RDWR|os.O_CREAT|(0 if OSX else os.O_DIRECT))
+      try: self.fd = os.open(filename, os.O_RDWR|os.O_CREAT|(0 if OSX or WIN else os.O_DIRECT))
       except OSError: self.fd = os.open(filename, os.O_RDWR|os.O_CREAT)
       if os.fstat(self.fd).st_size < self.size: os.ftruncate(self.fd, self.size)
       self.mem = mmap.mmap(self.fd, self.size)
