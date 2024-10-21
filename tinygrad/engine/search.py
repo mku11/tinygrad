@@ -1,5 +1,6 @@
 from typing import Dict, List, cast, DefaultDict, Optional, Tuple, Callable
 import itertools, functools, random, math, time, multiprocessing, traceback, signal
+import platform, threading
 from collections import defaultdict
 from dataclasses import replace
 from tinygrad.ops import UOp, UOps, Variable, sym_infer
@@ -55,9 +56,15 @@ class TimeoutException(Exception): pass
 def timeout_handler(signum, frame): raise TimeoutException()
 
 def _try_compile_linearized_w_idx(x:Tuple[int,Kernel], compiler:Compiler) -> Tuple[int, Optional[Tuple[Program, bytes, float]]]:
-  signal.signal(signal.SIGALRM, timeout_handler)
-  # set timeout
-  signal.alarm(getenv("BEAM_TIMEOUT_SEC", 10))
+  timer=None
+  if platform.system() == "Windows":
+    signal.signal(signal.SIGBREAK, timeout_handler)
+    timer = threading.Timer(getenv("BEAM_TIMEOUT_SEC", 10), lambda: signal.raise_signal(signal.SIGBREAK))
+    timer.start()
+  else:
+    signal.signal(signal.SIGALRM, timeout_handler)
+    # set timeout
+    signal.alarm(getenv("BEAM_TIMEOUT_SEC", 10))
   try:
     p = x[1].to_program(name_override="test")
     assert p.uops is not None, "uop list wasn't generated?"
@@ -75,7 +82,10 @@ def _try_compile_linearized_w_idx(x:Tuple[int,Kernel], compiler:Compiler) -> Tup
     if getenv("BEAM_STRICT_MODE"): raise e
     ret = None
   finally:
-    signal.alarm(0)
+    if platform.system() == "Windows":
+      timer.cancel()
+    else:
+      signal.alarm(0)
   return x[0], ret
 
 # workers should ignore ctrl c
