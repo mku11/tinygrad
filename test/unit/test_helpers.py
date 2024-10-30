@@ -1,4 +1,9 @@
+import asyncio
 import gzip, unittest
+import threading
+import time
+from http.server import HTTPServer, BaseHTTPRequestHandler
+
 from PIL import Image
 from tinygrad import Variable
 from tinygrad.helpers import Context, ContextVar
@@ -186,6 +191,37 @@ class TestFetch(unittest.TestCase):
     no_gzip_url: str = 'https://ftp.gnu.org/gnu/gzip/gzip-1.13.zip'
     with self.assertRaises(gzip.BadGzipFile):
       fetch(no_gzip_url, gunzip=True)
+
+  def test_fetch_retry(self):
+    body: str = "test"
+    success_retry=2
+    retries=3
+    fail_code=502
+    print(f"fetch on retry {success_retry} of {retries}")
+    class TestHttpServer(HTTPServer):
+      def __init__(self, address, request_handler):
+        super().__init__(address, request_handler)
+    class RequestHandler(BaseHTTPRequestHandler):
+      retry = 0
+      def __init__(self, request, client_address, server_class):
+        self.server_class = server_class
+        super().__init__(request, client_address, server_class)
+      def do_GET(self):
+        self.send_response(200 if RequestHandler.retry==success_retry else fail_code)
+        self.send_header("Content-Type", "text/html")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body.encode('utf8'))
+        RequestHandler.retry+=1
+    server=TestHttpServer(("localhost",8082), RequestHandler)
+    thread = threading.Thread(target=server.serve_forever)
+    thread.daemon = True
+    thread.start()
+    try:
+      l=len(fetch('http://localhost:8082/test' + str(time.time()), allow_caching=False, retries=retries).read_bytes())
+    finally:
+      server.server_close()
+    assert (l == len(body))
 
 class TestFullyFlatten(unittest.TestCase):
   def test_fully_flatten(self):

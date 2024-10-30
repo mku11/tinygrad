@@ -1,6 +1,6 @@
 from __future__ import annotations
 import os, functools, platform, time, re, contextlib, operator, hashlib, pickle, sqlite3, tempfile, pathlib, string, ctypes, sys, gzip
-import urllib.request, subprocess, shutil, math, contextvars, types, copyreg, inspect, importlib
+import urllib.request, urllib.error, subprocess, shutil, math, contextvars, types, copyreg, inspect, importlib
 from dataclasses import dataclass
 from typing import Dict, Tuple, Union, List, ClassVar, Optional, Iterable, Any, TypeVar, TYPE_CHECKING, Callable, Sequence
 if TYPE_CHECKING:  # TODO: remove this and import TypeGuard from typing once minimum python supported version is 3.10
@@ -230,25 +230,36 @@ def _ensure_downloads_dir() -> pathlib.Path:
   return pathlib.Path(_cache_dir) / "tinygrad" / "downloads"
 
 def fetch(url:str, name:Optional[Union[pathlib.Path, str]]=None, subdir:Optional[str]=None, gunzip:bool=False,
-          allow_caching=not getenv("DISABLE_HTTP_CACHE")) -> pathlib.Path:
+          allow_caching=not getenv("DISABLE_HTTP_CACHE"), retries:int=1) -> pathlib.Path:
   if url.startswith(("/", ".")): return pathlib.Path(url)
   if name is not None and (isinstance(name, pathlib.Path) or '/' in name): fp = pathlib.Path(name)
   else:
     fp = _ensure_downloads_dir() / (subdir or "") / \
       ((name or hashlib.md5(url.encode('utf-8')).hexdigest()) + (".gunzip" if gunzip else ""))
   if not fp.is_file() or not allow_caching:
-    with urllib.request.urlopen(url, timeout=10) as r:
-      assert r.status == 200
-      length = int(r.headers.get('content-length', 0)) if not gunzip else None
-      progress_bar = tqdm(total=length, unit='B', unit_scale=True, desc=f"{url}", disable=CI)
-      (path := fp.parent).mkdir(parents=True, exist_ok=True)
-      readfile = gzip.GzipFile(fileobj=r) if gunzip else r
-      with tempfile.NamedTemporaryFile(dir=path, delete=False) as f:
-        while chunk := readfile.read(16384): progress_bar.update(f.write(chunk))
-        f.close()
-        progress_bar.update(close=True)
-        if length and (file_size:=os.stat(f.name).st_size) < length: raise RuntimeError(f"fetch size incomplete, {file_size} < {length}")
-        pathlib.Path(f.name).rename(fp)
+    delay, retry, retries = 1, 0, min(retries, 4)
+    while retry <= retries:
+      try:
+        with urllib.request.urlopen(url, timeout=10) as r:
+          assert r.status == 200
+          length = int(r.headers.get('content-length', 0)) if not gunzip else None
+          progress_bar = tqdm(total=length, unit='B', unit_scale=True, desc=f"{url}", disable=CI)
+          (path := fp.parent).mkdir(parents=True, exist_ok=True)
+          readfile = gzip.GzipFile(fileobj=r) if gunzip else r
+          with tempfile.NamedTemporaryFile(dir=path, delete=False) as f:
+            while chunk := readfile.read(16384): progress_bar.update(f.write(chunk))
+            f.close()
+            progress_bar.update(close=True)
+            if length and (file_size:=os.stat(f.name).st_size) < length: raise RuntimeError(f"fetch size incomplete, {file_size} < {length}")
+            pathlib.Path(f.name).rename(fp)
+          break
+      except urllib.error.HTTPError as e:
+        if retry < retries and e.code in [408, 425, 429, 500, 502, 503, 504]:
+          print(f"retrying in {delay} secs")
+          time.sleep(delay)
+          delay, retry = delay * 2, retry + 1
+        else:
+          raise
   return fp
 
 # *** Exec helpers
